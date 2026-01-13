@@ -1,5 +1,18 @@
+from airflow.models import TaskInstance
 from airflow.decorators import dag, task
 from datetime import datetime, timedelta
+import logging
+
+def task_failure_alert(context):
+    ti: TaskInstance = context['task_instance']
+    msg = f"""
+    DAG: {ti.dag_id}
+    Task: {ti.task_id}
+    Execution_time: {context['execution_date']}
+    Error: {context.get('exception')}
+    """
+    print(msg)
+
 @dag(
     dag_id = "batch_ingestion_dag",
     schedule="@daily",
@@ -8,6 +21,7 @@ from datetime import datetime, timedelta
     default_args={
         "retries":3,
         "retry_delay":timedelta(minutes=5),
+        "on_failure_callback":task_failure_alert,
     },
     tags=["ingestion", "batch"],
 )
@@ -17,12 +31,15 @@ from datetime import datetime, timedelta
 
 def batch_ingestion():
 
-    @task
+    @task(sla=timedelta(minutes=15))
     def extract():
         return "raw data path"
 
     @task
     def validate(data):
+        logging.info(f'Validating data: {data}')
+        if data == "fail":
+            raise ValueError("Data Validation failed!")
         return data
 
     @task
@@ -31,4 +48,4 @@ def batch_ingestion():
 
     load(validate(extract()))
 
-    batch_ingestion()
+batch_ingestion()
